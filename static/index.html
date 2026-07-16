@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Castr — RTMP Live Webcam Streaming Hub</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <!-- mpegts.js for Ultra-Low Latency HTTP-FLV Live Streaming -->
+    <script src="mpegts.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Top Navigation Bar -->
+    <nav class="navbar">
+        <div class="nav-brand" onclick="app.showExplore()">
+            <div class="logo-icon">⚡</div>
+            <span class="logo-text">Castr<span class="logo-highlight">LIVE</span></span>
+            <span class="neon-badge">RTMP HUB</span>
+        </div>
+
+        <div class="nav-search">
+            <input type="text" id="search-input" placeholder="Search live RTMP webcam streams..." oninput="app.filterStreams()">
+            <div class="search-icon">🔍</div>
+        </div>
+
+        <div class="nav-actions" id="auth-nav-section">
+            <button class="btn btn-outline" onclick="app.openAuthModal('login')">Log In</button>
+            <button class="btn btn-primary" onclick="app.openAuthModal('register')">Register to Watch</button>
+        </div>
+
+        <div class="nav-user hidden" id="user-nav-section">
+            <button class="btn btn-guide" onclick="app.openRtmpModal()">
+                <span class="icon">📡</span> RTMP Setup Guide
+            </button>
+            <div class="user-badge">
+                <span class="user-avatar" id="nav-user-avatar">U</span>
+                <span id="nav-username">@username</span>
+            </div>
+            <button class="btn btn-ghost" onclick="app.logout()">Log Out</button>
+        </div>
+    </nav>
+
+    <!-- Main Content Container -->
+    <main class="main-container">
+        <!-- EXPLORE / STREAM DIRECTORY VIEW -->
+        <section id="explore-view" class="view-section active">
+            <div class="hero-header">
+                <div class="hero-content">
+                    <h1>High-Definition Live Webcam Streams</h1>
+                    <p>Watch crystal-clear live camera broadcasts powered by pure Rust asynchronous RTMP ingest. Restricted strictly to registered viewers.</p>
+                    <div class="category-pills">
+                        <button class="pill active" onclick="app.setCategory('All')">🔥 All Streams</button>
+                        <button class="pill" onclick="app.setCategory('Live Webcam')">📹 Live Webcams</button>
+                        <button class="pill" onclick="app.setCategory('Gaming')">🎮 Gaming & OBS</button>
+                        <button class="pill" onclick="app.setCategory('Tech')">💻 Tech & Coding</button>
+                        <button class="pill" onclick="app.setCategory('IRL')">🌍 IRL & Chat</button>
+                    </div>
+                </div>
+                <div class="hero-stats">
+                    <div class="stat-card">
+                        <span class="stat-value" id="stat-active-streams">0</span>
+                        <span class="stat-label">🔴 Live RTMP Feeds</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-value" id="stat-online-viewers">0</span>
+                        <span class="stat-label">👥 Online Viewers</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section-title">
+                <h2>Active Live Channels</h2>
+                <button class="btn btn-sm btn-ghost" onclick="app.fetchStreams()"><span class="refresh-spin">↻</span> Refresh Feeds</button>
+            </div>
+
+            <!-- Streams Grid -->
+            <div class="streams-grid" id="streams-grid">
+                <!-- Stream cards populated via JavaScript -->
+            </div>
+        </section>
+
+        <!-- LIVE WATCH / CINEMA VIEW -->
+        <section id="watch-view" class="view-section hidden">
+            <div class="watch-top-bar">
+                <button class="btn btn-back" onclick="app.showExplore()">
+                    <span>←</span> Directory
+                </button>
+                <div class="stream-status-pill">
+                    <span class="live-indicator"></span> LIVE RTMP FEED
+                </div>
+            </div>
+
+            <div class="cinema-layout">
+                <div class="video-container-wrapper">
+                    <div class="video-box" id="video-box">
+                        <video id="live-video-player" autoplay controls playsinline></video>
+                        
+                        <!-- Video Overlay Stats & Watermark -->
+                        <div class="player-watermark">CASTR • RUST RTMP ENGINE</div>
+                        <div class="player-overlay-stats" id="player-stats-overlay">
+                            <span>FPS: <strong id="stats-fps">60</strong></span> • 
+                            <span>Bitrate: <strong id="stats-bitrate">2500 kbps</strong></span> • 
+                            <span>Res: <strong id="stats-res">1920x1080</strong></span>
+                        </div>
+                    </div>
+
+                    <div class="stream-info-bar">
+                        <div class="stream-meta-left">
+                            <div class="broadcaster-avatar" id="watch-avatar">B</div>
+                            <div>
+                                <h2 id="watch-stream-title">Live Stream Title</h2>
+                                <div class="stream-broadcaster-info">
+                                    <span id="watch-broadcaster">@broadcaster</span>
+                                    <span class="verified-icon" title="RTMP Broadcaster">✓</span>
+                                    <span class="category-tag" id="watch-category">Live Webcam</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="stream-meta-right">
+                            <div class="viewer-pill">
+                                <span>👀</span> <strong id="watch-viewer-count">1</strong> viewers
+                            </div>
+                            <button class="btn btn-share" onclick="app.copyStreamUrl()">Copy Stream Link</button>
+                        </div>
+                    </div>
+
+                    <div class="stream-description-card">
+                        <h3>About this Stream</h3>
+                        <p id="watch-description">High-definition webcam feed streaming live via Castr RTMP Ingest server.</p>
+                        <div class="rtmp-connection-badge">
+                            <code>Protocol: HTTP-FLV / RTMP Demuxed</code> • <code>Latency: < 1.5s</code>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Chat Sidebar -->
+                <aside class="chat-sidebar">
+                    <div class="chat-header">
+                        <h3>💬 Live Room Chat</h3>
+                        <span class="chat-status" id="chat-connection-status">● Connected</span>
+                    </div>
+
+                    <div class="chat-messages" id="chat-messages">
+                        <!-- Chat items appended here -->
+                        <div class="system-message">Welcome to the live chat room! Please be respectful to the broadcaster and viewers.</div>
+                    </div>
+
+                    <div class="chat-emojis">
+                        <button onclick="app.insertEmoji('🔥')">🔥</button>
+                        <button onclick="app.insertEmoji('❤️')">❤️</button>
+                        <button onclick="app.insertEmoji('⚡')">⚡</button>
+                        <button onclick="app.insertEmoji('🎉')">🎉</button>
+                        <button onclick="app.insertEmoji('🦀')">🦀</button>
+                        <button onclick="app.insertEmoji('📹')">📹</button>
+                        <button onclick="app.insertEmoji('🚀')">🚀</button>
+                    </div>
+
+                    <form class="chat-input-form" onsubmit="app.sendChatMessage(event)">
+                        <input type="text" id="chat-input" placeholder="Type a message..." autocomplete="off">
+                        <button type="submit" class="btn btn-chat-send">Send</button>
+                    </form>
+                </aside>
+            </div>
+        </section>
+    </main>
+
+    <!-- AUTHENTICATION GLASS MODAL -->
+    <div class="modal-backdrop hidden" id="auth-modal">
+        <div class="modal-card auth-modal-card">
+            <button class="modal-close" onclick="app.closeAuthModal()">✕</button>
+            
+            <div class="auth-header">
+                <div class="auth-icon">🔒</div>
+                <h2 id="auth-modal-title">Registered Users Only</h2>
+                <p>All RTMP webcam streams are restricted to registered viewers. Register or sign in in seconds!</p>
+            </div>
+
+            <div class="auth-tabs">
+                <button class="tab-btn active" id="tab-login" onclick="app.switchAuthTab('login')">Log In</button>
+                <button class="tab-btn" id="tab-register" onclick="app.switchAuthTab('register')">Register Account</button>
+            </div>
+
+            <form class="auth-form" onsubmit="app.handleAuthSubmit(event)">
+                <div class="form-group">
+                    <label for="auth-username">Username</label>
+                    <input type="text" id="auth-username" placeholder="Choose a unique username" required minlength="3">
+                </div>
+                <div class="form-group">
+                    <label for="auth-password">Password</label>
+                    <input type="password" id="auth-password" placeholder="Enter password (min 3 chars)" required minlength="3">
+                </div>
+
+                <div class="auth-error hidden" id="auth-error-msg"></div>
+
+                <button type="submit" class="btn btn-primary btn-block" id="auth-submit-btn">Log In & Watch</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- RTMP SETUP & INGEST GUIDE MODAL -->
+    <div class="modal-backdrop hidden" id="rtmp-modal">
+        <div class="modal-card rtmp-modal-card">
+            <button class="modal-close" onclick="app.closeRtmpModal()">✕</button>
+            
+            <div class="modal-header">
+                <div class="rtmp-icon">📡</div>
+                <div>
+                    <h2>Start Streaming via RTMP Client</h2>
+                    <p>Connect your webcam, OBS Studio, FFmpeg, or mobile streaming app directly to our Rust server!</p>
+                </div>
+            </div>
+
+            <div class="rtmp-guide-body">
+                <div class="config-box">
+                    <label>RTMP Server URL (Ingest Endpoint)</label>
+                    <div class="copy-input-row">
+                        <input type="text" id="rtmp-url" value="rtmp://localhost:1935/live" readonly>
+                        <button class="btn btn-copy" onclick="app.copyText('rtmp-url')">Copy</button>
+                    </div>
+                </div>
+
+                <div class="config-box">
+                    <label>Stream Key (Custom Identifier)</label>
+                    <div class="copy-input-row">
+                        <input type="text" id="rtmp-key" value="my_webcam" placeholder="e.g. my_webcam">
+                        <button class="btn btn-copy" onclick="app.copyText('rtmp-key')">Copy Key</button>
+                    </div>
+                    <small>Enter any unique name for your camera stream key. It will automatically register when you start broadcasting!</small>
+                </div>
+
+                <div class="guide-steps">
+                    <h4>Recommended Setup (OBS Studio / FFmpeg)</h4>
+                    <ol>
+                        <li>In OBS Studio, go to <strong>Settings → Stream</strong>.</li>
+                        <li>Set Service to <strong>Custom</strong>.</li>
+                        <li>Paste the <strong>Server URL</strong> (`rtmp://localhost:1935/live`) and your chosen <strong>Stream Key</strong> (`my_webcam`).</li>
+                        <li>Click <strong>Start Streaming</strong> in OBS or run:
+                            <pre>ffmpeg -re -i input.mp4 -c:v libx264 -f flv rtmp://localhost:1935/live/my_webcam</pre>
+                        </li>
+                        <li>Your high-definition stream will instantly appear on the Castr Live directory for all registered viewers!</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

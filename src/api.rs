@@ -1,0 +1,328 @@
+use crate::auth;
+use crate::state::{AppState, ChatMessage, MediaPacket, StreamMetadata};
+use axum::{
+    extract::ws::{Message, WebSocket},
+    extract::{Path, Query, State, WebSocketUpgrade},
+    http::{header, StatusCode},
+    response::{IntoResponse, Response},
+    routing::{get, post},
+    Json, Router,
+};
+use bytes::Bytes;
+use chrono::Utc;
+use futures::SinkExt;
+use serde::Deserialize;
+use std::sync::Arc;
+use tracing::{info, warn};
+use uuid::Uuid;
+
+#[derive(Debug, Deserialize)]
+pub struct WatchQuery {
+    pub token: Option<String>,
+}
+
+pub fn create_router(state: Arc<AppState>) -> Router {
+    let auth_router = auth::create_auth_router();
+    Router::new()
+        .route("/api/streams", get(list_streams).post(register_stream))
+        .route("/api/streams/:key/end", post(end_stream))
+        .route("/api/stream/live/:key", get(http_flv_stream))
+        .route("/api/ws/watch/:key", get(ws_watch_handler))
+        .route("/api/ws/chat/:key", get(ws_chat_handler))
+        .merge(auth_router)
+        .with_state(state)
+}
+
+async fn list_streams(State(state): State<Arc<AppState>>) -> Json<Vec<StreamMetadata>> {
+    Json(state.get_stream_list().await)
+}
+
+async fn register_stream(
+    State(state): State<Arc<AppState>>,
+    Json(mut meta): Json<StreamMetadata>,
+) -> Json<StreamMetadata> {
+    if meta.stream_key.is_empty() {
+        meta.stream_key = Uuid::new_v4().to_string().replace('-', "")[..12].to_string();
+    }
+    let updated = state.create_or_update_stream(meta).await;
+    Json(updated)
+}
+
+async fn end_stream(Path(key): Path<String>, State(state): State<Arc<AppState>>) -> StatusCode {
+    state.end_stream(&key).await;
+    StatusCode::OK
+}
+
+/// HTTP-FLV live stream endpoint restricted to registered users
+async fn http_flv_stream(
+    Path(key_with_ext): Path<String>,
+    Query(query): Query<WatchQuery>,
+    State(state): State<Arc<AppState>>,
+) -> Response {
+    let token = query.token.as_deref().unwrap_or("");
+    if state.verify_token(token).await.is_none() {
+        warn!(
+            "Unauthorized HTTP-FLV watch attempt with token: '{}'",
+            token
+        );
+        return Response::builder()
+            .status(StatusCode::UNAUTHORIZED)
+            .body(axum::body::Body::from(
+                "Authentication Required: Registered users only",
+            ))
+            .unwrap();
+    }
+
+    let key = key_with_ext.trim_end_matches(".flv").to_string();
+    let subscription = state.subscribe_media(&key).await;
+
+    let (mut rx, init_tags) = match subscription {
+        Some(sub) => sub,
+        None => {
+            return Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(axum::body::Body::from("Stream offline or does not exist"))
+                .unwrap();
+        }
+    };
+
+    let body_stream = async_stream::stream! {
+        let mut init_payload = Vec::new();
+        // FLV 9-byte header + 4-byte previous tag size 0
+        init_payload.extend_from_slice(&[0x46, 0x4C, 0x56, 0x01, 0x05, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x00]);
+        for tag in init_tags {
+            init_payload.extend_from_slice(&tag);
+        }
+        yield Ok::<Bytes, std::io::Error>(Bytes::from(init_payload));
+
+        let mut wait_for_keyframe = false;
+        loop {
+            match rx.recv().await {
+                Ok(packet) => {
+                    let bytes = match packet {
+                        MediaPacket::SequenceHeader(b) => b,
+                        MediaPacket::Video { data, .. } => data,
+                        MediaPacket::Audio { data, .. } => data,
+                        MediaPacket::RawChunk { data, .. } => data,
+                    };
+
+                    if bytes.is_empty() {
+                        continue;
+                    }
+
+                    if wait_for_keyframe {
+                        let is_keyframe = bytes[0] == 0x09
+                            && bytes.len() >= 13
+                            && (bytes[11] >> 4) == 1
+                            && bytes[12] == 1;
+                        let is_seq_header = (bytes[0] == 0x09 && bytes.len() >= 13 && bytes[12] == 0)
+                            || (bytes[0] == 0x08 && bytes.len() >= 13 && bytes[12] == 0);
+
+                        if is_keyframe || is_seq_header {
+                            wait_for_keyframe = false;
+                        } else {
+                            continue;
+                        }
+                    }
+
+                    yield Ok(bytes);
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    tracing::warn!("Slow/unstable HTTP-FLV viewer lagged by {} packets. Resynchronizing on next keyframe...", skipped);
+                    wait_for_keyframe = true;
+                    continue;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    break;
+                }
+            }
+        }
+    };
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "video/x-flv")
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+        .header("X-Content-Type-Options", "nosniff")
+        .header("Transfer-Encoding", "chunked")
+        .body(axum::body::Body::from_stream(body_stream))
+        .unwrap()
+}
+
+/// WebSocket Watch handler restricted to registered users
+async fn ws_watch_handler(
+    ws: WebSocketUpgrade,
+    Path(key): Path<String>,
+    Query(query): Query<WatchQuery>,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let token = query.token.clone().unwrap_or_default();
+    ws.on_upgrade(move |socket| handle_watch_socket(socket, key, token, state))
+}
+
+async fn handle_watch_socket(
+    mut socket: WebSocket,
+    key: String,
+    token: String,
+    state: Arc<AppState>,
+) {
+    if state.verify_token(&token).await.is_none() {
+        let _ = socket
+            .send(Message::Text(
+                r#"{"error": "Authentication required. Please log in to watch this live stream."}"#
+                    .into(),
+            ))
+            .await;
+        let _ = socket.close().await;
+        return;
+    }
+
+    info!(
+        "📺 Authorized WebSocket viewer connected to stream: {}",
+        key
+    );
+    let subscription = state.subscribe_media(&key).await;
+
+    let (mut rx, init_tags) = match subscription {
+        Some(s) => s,
+        None => {
+            let _ = socket
+                .send(Message::Text(r#"{"error": "Stream offline"}"#.into()))
+                .await;
+            return;
+        }
+    };
+
+    for tag in init_tags {
+        if socket.send(Message::Binary(tag.to_vec())).await.is_err() {
+            return;
+        }
+    }
+
+    let mut wait_for_keyframe = false;
+    loop {
+        match rx.recv().await {
+            Ok(packet) => {
+                let bytes = match packet {
+                    MediaPacket::SequenceHeader(b) => b,
+                    MediaPacket::Video { data, .. } => data,
+                    MediaPacket::Audio { data, .. } => data,
+                    MediaPacket::RawChunk { data, .. } => data,
+                };
+
+                if bytes.is_empty() {
+                    continue;
+                }
+
+                if wait_for_keyframe {
+                    let is_keyframe = bytes[0] == 0x09
+                        && bytes.len() >= 13
+                        && (bytes[11] >> 4) == 1
+                        && bytes[12] == 1;
+                    let is_seq_header = (bytes[0] == 0x09 && bytes.len() >= 13 && bytes[12] == 0)
+                        || (bytes[0] == 0x08 && bytes.len() >= 13 && bytes[12] == 0);
+
+                    if is_keyframe || is_seq_header {
+                        wait_for_keyframe = false;
+                    } else {
+                        continue;
+                    }
+                }
+
+                if socket.send(Message::Binary(bytes.to_vec())).await.is_err() {
+                    break;
+                }
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                tracing::warn!("Slow/unstable WS viewer lagged by {} packets. Resynchronizing on next keyframe...", skipped);
+                wait_for_keyframe = true;
+                continue;
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                break;
+            }
+        }
+    }
+
+    info!("Viewer disconnected from {}", key);
+}
+
+/// WebSocket Chat handler restricted to registered users
+async fn ws_chat_handler(
+    ws: WebSocketUpgrade,
+    Path(key): Path<String>,
+    Query(query): Query<WatchQuery>,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let token = query.token.clone().unwrap_or_default();
+    ws.on_upgrade(move |socket| handle_chat_socket(socket, key, token, state))
+}
+
+async fn handle_chat_socket(
+    mut socket: WebSocket,
+    key: String,
+    token: String,
+    state: Arc<AppState>,
+) {
+    let user = match state.verify_token(&token).await {
+        Some(u) => u,
+        None => {
+            let _ = socket
+                .send(Message::Text(
+                    r#"{"error": "Authentication required to chat."}"#.into(),
+                ))
+                .await;
+            let _ = socket.close().await;
+            return;
+        }
+    };
+
+    info!(
+        "💬 Authorized user '{}' joined chat room: {}",
+        user.username, key
+    );
+    let subscription = state.subscribe_chat(&key).await;
+
+    let (mut rx, recent_chat) = match subscription {
+        Some(s) => s,
+        None => return,
+    };
+
+    for msg in recent_chat {
+        if let Ok(json) = serde_json::to_string(&msg) {
+            if socket.send(Message::Text(json)).await.is_err() {
+                state.unsubscribe_viewer(&key).await;
+                return;
+            }
+        }
+    }
+
+    let (mut sender, mut receiver) = futures::stream::StreamExt::split(socket);
+
+    let forward_task = tokio::spawn(async move {
+        while let Ok(msg) = rx.recv().await {
+            if let Ok(json) = serde_json::to_string(&msg) {
+                if sender.send(Message::Text(json)).await.is_err() {
+                    break;
+                }
+            }
+        }
+    });
+
+    while let Some(Ok(msg)) = futures::stream::StreamExt::next(&mut receiver).await {
+        if let Message::Text(text) = msg {
+            if let Ok(mut chat_msg) = serde_json::from_str::<ChatMessage>(&text) {
+                chat_msg.id = Uuid::new_v4().to_string();
+                chat_msg.stream_key = key.clone();
+                chat_msg.sender = user.username.clone();
+                chat_msg.badge = Some("Registered User".to_string());
+                chat_msg.timestamp = Utc::now();
+                state.publish_chat(chat_msg).await;
+            }
+        }
+    }
+
+    forward_task.abort();
+    state.unsubscribe_viewer(&key).await;
+    info!("Chat client left room: {}", key);
+}
