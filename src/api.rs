@@ -11,19 +11,43 @@ use axum::{
 use bytes::Bytes;
 use chrono::Utc;
 use futures::SinkExt;
+use once_cell::sync::Lazy;
 use serde::Deserialize;
 use std::sync::Arc;
+use tera::{Context, Tera};
 use tracing::{info, warn};
 use uuid::Uuid;
+
+pub static TEMPLATES: Lazy<Tera> = Lazy::new(|| {
+    match Tera::new("templates/**/*") {
+        Ok(t) => {
+            tracing::info!("🎨 Successfully loaded {} Tera templates", t.get_template_names().count());
+            t
+        }
+        Err(e) => {
+            tracing::error!("Tera template parsing error: {}", e);
+            Tera::default()
+        }
+    }
+});
 
 #[derive(Debug, Deserialize)]
 pub struct WatchQuery {
     pub token: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct StreamFilterQuery {
+    pub search: Option<String>,
+    pub category: Option<String>,
+}
+
 pub fn create_router(state: Arc<AppState>) -> Router {
     let auth_router = auth::create_auth_router();
     Router::new()
+        .route("/", get(render_index))
+        .route("/api/partials/streams", get(render_partials_streams))
+        .route("/api/partials/stats", get(render_partials_stats))
         .route("/api/streams", get(list_streams).post(register_stream))
         .route("/api/streams/:key/end", post(end_stream))
         .route("/api/stream/live/:key", get(http_flv_stream))
@@ -31,6 +55,90 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/ws/chat/:key", get(ws_chat_handler))
         .merge(auth_router)
         .with_state(state)
+}
+
+async fn render_index(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let mut context = Context::new();
+    context.insert("title", "Castr — RTMP Live Webcam Streaming Hub");
+    context.insert("disable_registration", &state.disable_registration);
+
+    let streams = state.get_stream_list().await;
+    context.insert("active_stream_count", &streams.len());
+    let total_viewers: usize = streams.iter().map(|s| s.viewer_count).sum();
+    context.insert("total_viewers", &total_viewers);
+
+    match TEMPLATES.render("index.html", &context) {
+        Ok(rendered) => axum::response::Html(rendered).into_response(),
+        Err(e) => {
+            tracing::error!("Template render error: {}", e);
+            axum::response::Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(axum::body::Body::from(format!("Template error: {}", e)))
+                .unwrap()
+                .into_response()
+        }
+    }
+}
+
+async fn render_partials_streams(
+    State(state): State<Arc<AppState>>,
+    Query(filter): Query<StreamFilterQuery>,
+) -> impl IntoResponse {
+    let mut streams = state.get_stream_list().await;
+
+    if let Some(ref cat) = filter.category {
+        if !cat.is_empty() && !cat.eq_ignore_ascii_case("all") {
+            streams.retain(|s| s.category.eq_ignore_ascii_case(cat));
+        }
+    }
+
+    if let Some(ref q) = filter.search {
+        let q_lower = q.trim().to_lowercase();
+        if !q_lower.is_empty() {
+            streams.retain(|s| {
+                s.title.to_lowercase().contains(&q_lower)
+                    || s.broadcaster.to_lowercase().contains(&q_lower)
+                    || s.category.to_lowercase().contains(&q_lower)
+            });
+        }
+    }
+
+    let mut context = Context::new();
+    context.insert("streams", &streams);
+
+    match TEMPLATES.render("partials/stream_cards.html", &context) {
+        Ok(rendered) => axum::response::Html(rendered).into_response(),
+        Err(e) => {
+            tracing::error!("Partial render error: {}", e);
+            axum::response::Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(axum::body::Body::from(format!("Template error: {}", e)))
+                .unwrap()
+                .into_response()
+        }
+    }
+}
+
+async fn render_partials_stats(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let streams = state.get_stream_list().await;
+    let active_stream_count = streams.len();
+    let total_viewers: usize = streams.iter().map(|s| s.viewer_count).sum();
+
+    let mut context = Context::new();
+    context.insert("active_stream_count", &active_stream_count);
+    context.insert("total_viewers", &total_viewers);
+
+    match TEMPLATES.render("partials/stats_cards.html", &context) {
+        Ok(rendered) => axum::response::Html(rendered).into_response(),
+        Err(e) => {
+            tracing::error!("Partial render error: {}", e);
+            axum::response::Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(axum::body::Body::from(format!("Template error: {}", e)))
+                .unwrap()
+                .into_response()
+        }
+    }
 }
 
 async fn list_streams(State(state): State<Arc<AppState>>) -> Json<Vec<StreamMetadata>> {

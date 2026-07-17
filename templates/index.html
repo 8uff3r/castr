@@ -1,0 +1,335 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- EXPLORE / STREAM DIRECTORY VIEW -->
+<section id="explore-view" class="view-section active space-y-10 w-full" x-data="{ activeCategory: 'All' }">
+    <!-- Full-Width Hero Banner & Stats Container -->
+    <div class="w-full relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900/95 via-slate-900/70 to-slate-900/95 border border-slate-800/90 p-8 sm:p-14 shadow-2xl backdrop-blur-xl">
+        <!-- Glowing Background Orbs -->
+        <div class="absolute -right-32 -top-32 w-[500px] h-[500px] bg-gradient-to-br from-cyan-500/20 to-blue-600/20 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="absolute -left-32 -bottom-32 w-[400px] h-[400px] bg-gradient-to-tr from-emerald-500/15 to-cyan-500/15 rounded-full blur-3xl pointer-events-none"></div>
+        
+        <div class="relative z-10 space-y-8 max-w-5xl">
+            <div class="space-y-4">
+                <div class="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 text-xs font-bold tracking-wider uppercase shadow-md">
+                    <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping"></span> RUST ASYNC RTMP INGEST ENGINE
+                </div>
+                <h1 class="text-4xl sm:text-6xl font-extrabold tracking-tight leading-none text-white">
+                    High-Definition <span class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-500">Live Webcam</span> Hub
+                </h1>
+                <p class="text-slate-300 text-base sm:text-xl max-w-3xl leading-relaxed font-normal">
+                    Watch ultra-low latency (< 1.5s) camera feeds powered by high-performance asynchronous Rust RTMP demuxing and HTTP-FLV delivery. Restricted exclusively to authenticated viewers.
+                </p>
+            </div>
+
+            <!-- Horizontal 4-Column Live Server Metrics Banner -->
+            <div id="server-stats-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 pt-4" hx-get="/api/partials/stats" hx-trigger="load, every 10s" hx-swap="innerHTML">
+                <div class="bg-slate-950/70 border border-slate-800/90 rounded-2xl p-6 flex items-center justify-between shadow-lg backdrop-blur-md hover:border-cyan-500/50 transition-all group">
+                    <div>
+                        <span class="block text-xs font-bold text-slate-400 uppercase tracking-wider">Active Broadcasts</span>
+                        <span class="text-3xl font-extrabold text-white tracking-tight font-mono group-hover:text-cyan-400 transition-colors" id="stat-active-streams">{{ active_stream_count | default(value=0) }}</span>
+                    </div>
+                    <div class="w-12 h-12 rounded-2xl bg-cyan-500/15 border border-cyan-500/40 flex items-center justify-center text-2xl text-cyan-400 shadow-sm">
+                        🔴
+                    </div>
+                </div>
+
+                <div class="bg-slate-950/70 border border-slate-800/90 rounded-2xl p-6 flex items-center justify-between shadow-lg backdrop-blur-md hover:border-blue-500/50 transition-all group">
+                    <div>
+                        <span class="block text-xs font-bold text-slate-400 uppercase tracking-wider">Online Viewers</span>
+                        <span class="text-3xl font-extrabold text-white tracking-tight font-mono group-hover:text-blue-400 transition-colors" id="stat-online-viewers">{{ total_viewers | default(value=0) }}</span>
+                    </div>
+                    <div class="w-12 h-12 rounded-2xl bg-blue-500/15 border border-blue-500/40 flex items-center justify-center text-2xl text-blue-400 shadow-sm">
+                        👥
+                    </div>
+                </div>
+
+                <div class="bg-slate-950/70 border border-slate-800/90 rounded-2xl p-6 flex items-center justify-between shadow-lg backdrop-blur-md hover:border-emerald-500/50 transition-all group">
+                    <div>
+                        <span class="block text-xs font-bold text-slate-400 uppercase tracking-wider">Stream Latency</span>
+                        <span class="text-3xl font-extrabold text-emerald-400 tracking-tight font-mono">&lt; 1.5s</span>
+                    </div>
+                    <div class="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center text-2xl text-emerald-400 shadow-sm">
+                        ⚡
+                    </div>
+                </div>
+
+                <div class="bg-slate-950/70 border border-slate-800/90 rounded-2xl p-6 flex items-center justify-between shadow-lg backdrop-blur-md hover:border-purple-500/50 transition-all group">
+                    <div>
+                        <span class="block text-xs font-bold text-slate-400 uppercase tracking-wider">Security Policy</span>
+                        <span class="text-lg font-extrabold text-purple-300 tracking-tight">Auth Required</span>
+                    </div>
+                    <div class="w-12 h-12 rounded-2xl bg-purple-500/15 border border-purple-500/40 flex items-center justify-center text-2xl text-purple-400 shadow-sm">
+                        🛡️
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Channels Filter & Header Bar -->
+    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-2 border-b border-slate-800/80">
+        <div>
+            <h2 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-white flex items-center gap-3">
+                Live Broadcast Channels
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-lg shadow-emerald-500/50"></span>
+            </h2>
+            <p class="text-slate-400 text-sm mt-1">Select a feed below to enter the live cinema watch room</p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3">
+            <!-- Category Pills -->
+            <div class="flex flex-wrap gap-2 bg-slate-900/80 p-1.5 rounded-2xl border border-slate-800">
+                <button 
+                    type="button"
+                    class="pill active px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm"
+                    @click="activeCategory = 'All'; app.setCategory('All')"
+                    hx-get="/api/partials/streams?category=All" 
+                    hx-target="#streams-grid"
+                >🔥 All</button>
+                <button 
+                    type="button"
+                    class="pill px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer bg-slate-900/80 text-slate-400 border border-slate-800 hover:text-white"
+                    @click="activeCategory = 'Live Webcam'; app.setCategory('Live Webcam')"
+                    hx-get="/api/partials/streams?category=Live+Webcam" 
+                    hx-target="#streams-grid"
+                >📹 Live Webcams</button>
+                <button 
+                    type="button"
+                    class="pill px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer bg-slate-900/80 text-slate-400 border border-slate-800 hover:text-white"
+                    @click="activeCategory = 'Gaming'; app.setCategory('Gaming')"
+                    hx-get="/api/partials/streams?category=Gaming" 
+                    hx-target="#streams-grid"
+                >🎮 Gaming & OBS</button>
+                <button 
+                    type="button"
+                    class="pill px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer bg-slate-900/80 text-slate-400 border border-slate-800 hover:text-white"
+                    @click="activeCategory = 'Tech'; app.setCategory('Tech')"
+                    hx-get="/api/partials/streams?category=Tech" 
+                    hx-target="#streams-grid"
+                >💻 Tech & Coding</button>
+                <button 
+                    type="button"
+                    class="pill px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer bg-slate-900/80 text-slate-400 border border-slate-800 hover:text-white"
+                    @click="activeCategory = 'IRL'; app.setCategory('IRL')"
+                    hx-get="/api/partials/streams?category=IRL" 
+                    hx-target="#streams-grid"
+                >🌍 IRL & Chat</button>
+            </div>
+
+            <!-- Refresh Feeds Button -->
+            <button 
+                type="button"
+                class="px-5 py-2.5 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-cyan-500/50 text-slate-200 flex items-center gap-2 transition-all cursor-pointer shadow-md group" 
+                hx-get="/api/partials/streams" 
+                hx-target="#streams-grid" 
+                onclick="app.fetchStreams(); if(window.htmx) htmx.ajax('GET', '/api/partials/stats', '#server-stats-cards')"
+            >
+                <span class="text-cyan-400 text-base group-hover:rotate-180 transition-transform duration-500">↻</span> Refresh
+            </button>
+        </div>
+    </div>
+
+    <!-- Streams Grid (Spanning 1 to 5 Columns based on screen width!) -->
+    <div class="streams-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6 w-full min-h-[300px]" id="streams-grid" hx-get="/api/partials/streams" hx-trigger="load, every 10s" hx-swap="innerHTML">
+        <!-- Stream cards populated dynamically via HTMX or JavaScript -->
+    </div>
+</section>
+
+<!-- LIVE WATCH / CINEMA VIEW (Full Width Cinema Mode) -->
+<section id="watch-view" class="view-section hidden space-y-8 w-full">
+    <!-- Top Navigation Back & Status Bar -->
+    <div class="flex items-center justify-between pb-4 border-b border-slate-800/80">
+        <button class="flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-sm font-bold bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-200 transition-all cursor-pointer shadow-md group" onclick="app.showExplore()">
+            <span class="text-cyan-400 group-hover:-translate-x-1 transition-transform">←</span> Back to Directory
+        </button>
+        <div class="flex items-center gap-2.5 px-4 py-2 rounded-full bg-rose-500/15 border border-rose-500/40 text-rose-400 text-xs font-extrabold tracking-wider uppercase animate-pulse shadow-md">
+            <span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span> LIVE HTTP-FLV / RTMP FEED
+        </div>
+    </div>
+
+    <!-- Cinema Layout (12 Columns on Desktop) -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start w-full">
+        <!-- Main Video Player & Metadata Column (9 Columns on large screens) -->
+        <div class="lg:col-span-8 xl:col-span-9 space-y-6 w-full">
+            <!-- Video Player Box -->
+            <div class="relative bg-black rounded-3xl overflow-hidden border border-slate-800 shadow-2xl aspect-video flex items-center justify-center group shadow-neon-cyan/10" id="video-box">
+                <video id="live-video-player" class="w-full h-full object-contain" autoplay controls playsinline></video>
+                
+                <!-- Watermark -->
+                <div class="absolute top-4 left-4 pointer-events-none px-3.5 py-1.5 rounded-xl bg-black/70 backdrop-blur-md border border-white/10 text-[11px] font-mono font-bold tracking-widest uppercase text-slate-300">
+                    CASTR • RUST RTMP ENGINE
+                </div>
+                
+                <!-- Overlay Stats -->
+                <div class="absolute bottom-16 right-4 pointer-events-none px-3.5 py-2 rounded-xl bg-black/80 backdrop-blur-md border border-white/10 text-xs font-mono text-cyan-400 flex items-center gap-3.5 opacity-0 group-hover:opacity-100 transition-opacity" id="player-stats-overlay">
+                    <span>FPS: <strong class="text-white" id="stats-fps">60</strong></span> • 
+                    <span>Bitrate: <strong class="text-white" id="stats-bitrate">2500 kbps</strong></span> • 
+                    <span>Res: <strong class="text-white" id="stats-res">1920x1080</strong></span>
+                </div>
+            </div>
+
+            <!-- Stream Info & Actions Bar -->
+            <div class="bg-slate-900/90 border border-slate-800/90 rounded-3xl p-6 sm:p-8 shadow-xl backdrop-blur-md flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+                <div class="flex items-center gap-5">
+                    <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center text-slate-950 font-extrabold text-3xl shadow-lg shadow-cyan-500/25" id="watch-avatar">B</div>
+                    <div class="space-y-1">
+                        <h2 class="text-2xl font-extrabold text-white tracking-tight" id="watch-stream-title">Live Stream Title</h2>
+                        <div class="flex flex-wrap items-center gap-2.5">
+                            <span class="text-sm font-bold text-cyan-400" id="watch-broadcaster">@broadcaster</span>
+                            <span class="w-4 h-4 rounded-full bg-cyan-500 text-slate-950 text-[10px] flex items-center justify-center font-bold shadow-sm" title="Verified Broadcaster">✓</span>
+                            <span class="px-3 py-0.5 rounded-full text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700 font-mono" id="watch-category">Live Webcam</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3.5">
+                    <div class="flex items-center gap-2 px-4 py-2 rounded-2xl bg-slate-950/90 border border-slate-800 text-xs font-bold text-slate-300 shadow-inner">
+                        <span class="text-rose-400 text-sm">👀</span> <strong class="text-white text-sm" id="watch-viewer-count">1</strong> viewers
+                    </div>
+                    <button type="button" class="px-5 py-2.5 rounded-2xl text-xs font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 hover:bg-cyan-500/25 transition-all cursor-pointer shadow-sm" onclick="app.copyStreamUrl()">
+                        📋 Copy Stream URL
+                    </button>
+                </div>
+            </div>
+
+            <!-- About Stream Card -->
+            <div class="bg-slate-900/60 border border-slate-800/80 rounded-3xl p-6 sm:p-8 shadow-xl backdrop-blur-md space-y-4">
+                <h3 class="text-lg font-bold text-white tracking-tight">About this Broadcast</h3>
+                <p class="text-slate-300 text-sm leading-relaxed font-normal" id="watch-description">High-definition webcam feed streaming live via Castr RTMP Ingest server.</p>
+                <div class="flex flex-wrap items-center gap-3.5 pt-3 border-t border-slate-800/80 text-xs font-mono text-slate-400">
+                    <span class="px-3 py-1.5 rounded-xl bg-slate-950/90 border border-slate-800 text-cyan-400">Protocol: HTTP-FLV / RTMP Demuxed</span>
+                    <span class="px-3 py-1.5 rounded-xl bg-slate-950/90 border border-slate-800 text-emerald-400">Ingest Latency: &lt; 1.5s Ultra-Fast</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Live Chat Sidebar Column (3 Columns on large screens) -->
+        <aside class="lg:col-span-4 xl:col-span-3 bg-slate-900/95 border border-slate-800/90 rounded-3xl shadow-2xl backdrop-blur-md flex flex-col h-[760px] sticky top-24 overflow-hidden w-full">
+            <div class="p-5 border-b border-slate-800/90 flex items-center justify-between bg-slate-950/60">
+                <h3 class="font-extrabold text-base text-white flex items-center gap-2.5">💬 Live Room Chat</h3>
+                <span class="text-xs font-bold text-emerald-400 flex items-center gap-1.5 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/30" id="chat-connection-status">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span> Connected
+                </span>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-5 space-y-3.5 font-sans text-sm" id="chat-messages">
+                <div class="p-3.5 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs leading-relaxed font-medium">
+                    Welcome to the live chat room! Please be respectful to the broadcaster and fellow viewers.
+                </div>
+            </div>
+
+            <div class="px-4 py-2.5 border-t border-slate-800/90 bg-slate-950/60 flex items-center gap-2 overflow-x-auto">
+                <button type="button" class="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-sm cursor-pointer border border-slate-700/50" onclick="app.insertEmoji('🔥')">🔥</button>
+                <button type="button" class="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-sm cursor-pointer border border-slate-700/50" onclick="app.insertEmoji('❤️')">❤️</button>
+                <button type="button" class="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-sm cursor-pointer border border-slate-700/50" onclick="app.insertEmoji('⚡')">⚡</button>
+                <button type="button" class="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-sm cursor-pointer border border-slate-700/50" onclick="app.insertEmoji('🎉')">🎉</button>
+                <button type="button" class="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-sm cursor-pointer border border-slate-700/50" onclick="app.insertEmoji('🦀')">🦀</button>
+                <button type="button" class="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-sm cursor-pointer border border-slate-700/50" onclick="app.insertEmoji('📹')">📹</button>
+                <button type="button" class="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-sm cursor-pointer border border-slate-700/50" onclick="app.insertEmoji('🚀')">🚀</button>
+            </div>
+
+            <form class="p-4 border-t border-slate-800/90 bg-slate-950/80 flex items-center gap-2.5" onsubmit="app.sendChatMessage(event)">
+                <input 
+                    type="text" 
+                    id="chat-input" 
+                    placeholder="Type a message..." 
+                    autocomplete="off"
+                    class="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition-colors"
+                >
+                <button type="submit" class="px-5 py-2.5 rounded-xl text-xs font-extrabold bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 hover:from-cyan-400 hover:to-blue-500 transition-all shadow-md cursor-pointer">
+                    Send
+                </button>
+            </form>
+        </aside>
+    </div>
+</section>
+{% endblock %}
+
+{% block modals %}
+<!-- AUTHENTICATION GLASS MODAL -->
+<div class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md hidden items-center justify-center p-4 transition-all" id="auth-modal">
+    <div class="bg-slate-900 border border-slate-800/90 rounded-3xl max-w-md w-full p-8 sm:p-10 shadow-2xl relative space-y-6 overflow-hidden">
+        <div class="absolute -right-16 -top-16 w-48 h-48 bg-cyan-500/15 rounded-full blur-2xl pointer-events-none"></div>
+        <button type="button" class="absolute top-6 right-6 text-slate-400 hover:text-white transition-colors cursor-pointer text-lg" onclick="app.closeAuthModal()">✕</button>
+        
+        <div class="text-center space-y-2.5">
+            <div class="w-14 h-14 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 flex items-center justify-center text-3xl mx-auto shadow-sm">🔒</div>
+            <h2 class="text-2xl font-extrabold text-white tracking-tight" id="auth-modal-title">Registered Users Only</h2>
+            <p class="text-slate-400 text-sm leading-relaxed">All RTMP webcam streams are restricted to registered viewers. Sign in to join the live broadcast!</p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2 bg-slate-950/90 p-1.5 rounded-2xl border border-slate-800">
+            <button type="button" class="tab-btn active py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer bg-slate-800 text-white shadow-sm" id="tab-login" onclick="app.switchAuthTab('login')">Log In</button>
+            {% if not disable_registration %}
+            <button type="button" class="tab-btn py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer text-slate-400 hover:text-white" id="tab-register" onclick="app.switchAuthTab('register')">Register Account</button>
+            {% endif %}
+        </div>
+
+        <form class="space-y-4" onsubmit="app.handleAuthSubmit(event)">
+            <div class="space-y-1.5">
+                <label for="auth-username" class="block text-xs font-bold text-slate-300 uppercase tracking-wider">Username</label>
+                <input type="text" id="auth-username" placeholder="Choose a unique username" required minlength="3" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500 transition-colors">
+            </div>
+            <div class="space-y-1.5">
+                <label for="auth-password" class="block text-xs font-bold text-slate-300 uppercase tracking-wider">Password</label>
+                <input type="password" id="auth-password" placeholder="Enter password (min 3 chars)" required minlength="3" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500 transition-colors">
+            </div>
+
+            <div class="hidden p-3 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-400 text-xs font-bold" id="auth-error-msg"></div>
+
+            <button type="submit" class="w-full py-3.5 rounded-xl font-extrabold bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 hover:from-cyan-400 hover:to-blue-500 transition-all shadow-lg shadow-cyan-500/25 cursor-pointer text-sm" id="auth-submit-btn">
+                Log In & Watch
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- RTMP SETUP & INGEST GUIDE MODAL -->
+<div class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md hidden items-center justify-center p-4 transition-all" id="rtmp-modal">
+    <div class="bg-slate-900 border border-slate-800/90 rounded-3xl max-w-2xl w-full p-8 sm:p-10 shadow-2xl relative space-y-6 max-h-[90vh] overflow-y-auto">
+        <button type="button" class="absolute top-6 right-6 text-slate-400 hover:text-white transition-colors cursor-pointer text-lg" onclick="app.closeRtmpModal()">✕</button>
+        
+        <div class="flex items-center gap-4 border-b border-slate-800 pb-5">
+            <div class="w-14 h-14 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 flex items-center justify-center text-3xl shadow-sm">📡</div>
+            <div>
+                <h2 class="text-2xl font-extrabold text-white tracking-tight">Start Streaming via RTMP Client</h2>
+                <p class="text-slate-400 text-xs mt-0.5">Connect your webcam, OBS Studio, or FFmpeg directly to our Rust ingest server!</p>
+            </div>
+        </div>
+
+        <div class="space-y-5 text-sm">
+            <div class="space-y-2">
+                <label class="block text-xs font-bold text-slate-300 uppercase tracking-wider">RTMP Server URL (Ingest Endpoint)</label>
+                <div class="flex gap-2.5">
+                    <input type="text" id="rtmp-url" value="rtmp://localhost:1935/live" readonly class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 font-mono text-cyan-400 text-xs select-all">
+                    <button type="button" class="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white transition-colors cursor-pointer border border-slate-700" onclick="app.copyText('rtmp-url')">Copy</button>
+                </div>
+            </div>
+
+            <div class="space-y-2">
+                <label class="block text-xs font-bold text-slate-300 uppercase tracking-wider">Stream Key (Custom Identifier)</label>
+                <div class="flex gap-2.5">
+                    <input type="text" id="rtmp-key" value="my_webcam" placeholder="e.g. my_webcam" class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 font-mono text-cyan-400 text-xs">
+                    <button type="button" class="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white transition-colors cursor-pointer border border-slate-700" onclick="app.copyText('rtmp-key')">Copy Key</button>
+                </div>
+                <p class="text-slate-400 text-xs">Enter any unique name for your camera stream key. It will automatically register on ingest.</p>
+            </div>
+
+            <div class="bg-slate-950/80 border border-slate-800/90 rounded-2xl p-6 space-y-3.5">
+                <h4 class="font-extrabold text-white text-xs uppercase tracking-wider text-cyan-400 flex items-center gap-2">
+                    <span>🎬</span> Recommended Setup (OBS Studio / FFmpeg)
+                </h4>
+                <ol class="list-decimal list-inside space-y-2.5 text-slate-300 text-xs leading-relaxed font-normal">
+                    <li>In OBS Studio, open <strong>Settings → Stream</strong>.</li>
+                    <li>Set Service to <strong>Custom</strong>.</li>
+                    <li>Paste the <strong>Server URL</strong> (`rtmp://localhost:1935/live`) and your chosen <strong>Stream Key</strong> (`my_webcam`).</li>
+                    <li>Click <strong>Start Streaming</strong> or run via FFmpeg:
+                        <pre class="bg-black border border-slate-800/90 p-3.5 rounded-xl mt-2.5 font-mono text-[11px] text-cyan-300 overflow-x-auto shadow-inner">ffmpeg -re -i input.mp4 -c:v libx264 -f flv rtmp://localhost:1935/live/my_webcam</pre>
+                    </li>
+                    <li>Your high-definition stream will instantly appear on the Castr Live directory for all registered viewers!</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

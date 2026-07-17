@@ -1,3 +1,4 @@
 /target
 users.json
 /recordings
+node_modules/

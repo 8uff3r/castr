@@ -88,14 +88,19 @@ class CastrApp {
 
     setCategory(category) {
         this.currentCategory = category;
-        document.querySelectorAll('.category-pills .pill').forEach(btn => {
+        document.querySelectorAll('.pill').forEach(btn => {
             if (btn.textContent.includes(category) || (category === 'All' && btn.textContent.includes('All'))) {
-                btn.classList.add('active');
+                btn.classList.add('active', 'bg-cyan-500/20', 'text-cyan-300', 'border-cyan-500/40');
+                btn.classList.remove('bg-slate-900/80', 'text-slate-400', 'border-slate-800');
             } else {
-                btn.classList.remove('active');
+                btn.classList.remove('active', 'bg-cyan-500/20', 'text-cyan-300', 'border-cyan-500/40');
+                btn.classList.add('bg-slate-900/80', 'text-slate-400', 'border-slate-800');
             }
         });
-        this.filterStreams();
+        // If HTMX is active, HTMX will handle fetching server partials automatically via hx-get on button click!
+        if (!window.htmx) {
+            this.filterStreams();
+        }
     }
 
     filterStreams() {
@@ -120,13 +125,13 @@ class CastrApp {
 
         if (streamsList.length === 0) {
             grid.innerHTML = `
-                <div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; background: var(--bg-card); border-radius: var(--radius-md); border: 1px dashed var(--border-color);">
-                    <div style="font-size: 3rem; margin-bottom: 1rem;">📭</div>
-                    <h3 style="font-size: 1.3rem; margin-bottom: 0.5rem;">No Active Live Streams Found</h3>
-                    <p style="color: var(--text-secondary); max-width: 500px; margin: 0 auto;">
-                        There are currently no RTMP webcam broadcasts matching your search. Connect an RTMP client or check back shortly!
+                <div class="col-span-full text-center py-16 px-4 bg-slate-900/60 rounded-3xl border border-dashed border-slate-800/80 backdrop-blur-md space-y-4">
+                    <div class="text-5xl animate-bounce">📭</div>
+                    <h3 class="text-xl font-bold text-white tracking-tight">No Active Live Streams Found</h3>
+                    <p class="text-slate-400 text-sm max-w-md mx-auto leading-relaxed">
+                        There are currently no RTMP webcam broadcasts matching your search or category. Connect an RTMP client or check back shortly!
                     </p>
-                    ${this.token ? `<button class="btn btn-guide" style="margin-top: 1.5rem;" onclick="app.openRtmpModal()">📡 Start RTMP Feed</button>` : ''}
+                    ${this.token ? `<button class="px-5 py-2.5 rounded-xl font-bold bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 hover:from-cyan-400 hover:to-blue-500 shadow-lg shadow-cyan-500/20 text-xs inline-flex items-center gap-2 cursor-pointer mt-4" onclick="app.openRtmpModal()">📡 Start RTMP Feed</button>` : ''}
                 </div>
             `;
             return;
@@ -134,35 +139,52 @@ class CastrApp {
 
         streamsList.forEach(stream => {
             const card = document.createElement('div');
-            card.className = 'stream-card';
+            card.className = 'bg-slate-900/90 border border-slate-800/80 rounded-3xl overflow-hidden shadow-xl hover:shadow-cyan-500/10 hover:border-cyan-500/50 transition-all duration-300 group cursor-pointer flex flex-col justify-between';
             card.onclick = () => this.watchStream(stream);
 
             const isLiveBadge = stream.is_live 
-                ? `<div class="card-live-badge"><span class="live-dot"></span> LIVE</div>`
-                : `<div class="card-live-badge" style="background: hsla(215, 25%, 35%, 0.8);">OFFLINE</div>`;
+                ? `<div class="absolute top-4 left-4 z-10 px-3 py-1 rounded-full bg-rose-500/90 backdrop-blur-md text-white text-[10px] font-extrabold tracking-wider uppercase flex items-center gap-1.5 shadow-lg animate-pulse"><span class="w-1.5 h-1.5 rounded-full bg-white animate-ping"></span> LIVE</div>`
+                : `<div class="absolute top-4 left-4 z-10 px-3 py-1 rounded-full bg-slate-800/90 backdrop-blur-md text-slate-400 text-[10px] font-bold tracking-wider uppercase">OFFLINE</div>`;
 
             card.innerHTML = `
-                <div class="stream-thumbnail">
+                <div class="relative aspect-video bg-slate-950/80 overflow-hidden flex items-center justify-center border-b border-slate-800/80">
                     ${isLiveBadge}
-                    <div class="thumbnail-placeholder">📹</div>
-                    <div class="card-viewers-badge">👀 ${stream.viewer_count || 0} watching</div>
-                </div>
-                <div class="card-content">
-                    <div>
-                        <div class="card-meta">
-                            <span class="card-broadcaster">@${stream.broadcaster}</span>
-                            <span class="card-category">${stream.category || 'Live Webcam'}</span>
-                        </div>
-                        <h3 class="card-title">${stream.title}</h3>
+                    <div class="text-5xl text-slate-700/60 group-hover:scale-110 group-hover:text-cyan-500/40 transition-all duration-500">📹</div>
+                    <div class="absolute bottom-3 right-3 px-2.5 py-1 rounded-lg bg-black/70 backdrop-blur-md border border-white/10 text-[11px] font-semibold text-slate-300 flex items-center gap-1.5 shadow-sm">
+                        <span class="text-rose-400">👀</span> ${stream.viewer_count || 0} watching
                     </div>
-                    <div class="card-footer">
-                        <span>Res: ${stream.resolution || '1080p'}</span>
-                        <span>Bitrate: ${stream.bitrate_kbps || 2500} kbps</span>
+                </div>
+                <div class="p-5 flex-1 flex flex-col justify-between space-y-4">
+                    <div class="space-y-1.5">
+                        <div class="flex items-center justify-between text-xs">
+                            <span class="font-bold text-cyan-400 truncate max-w-[140px]">@${stream.broadcaster}</span>
+                            <span class="px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 font-medium text-[10px] border border-slate-700">${stream.category || 'Live Webcam'}</span>
+                        </div>
+                        <h3 class="font-extrabold text-white text-base tracking-tight group-hover:text-cyan-300 transition-colors line-clamp-1">${stream.title}</h3>
+                    </div>
+                    <div class="pt-3 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono text-slate-500">
+                        <span>Res: <strong class="text-slate-300">${stream.resolution || '1080p'}</strong></span>
+                        <span>Bitrate: <strong class="text-slate-300">${stream.bitrate_kbps || 2500}</strong> kbps</span>
                     </div>
                 </div>
             `;
             grid.appendChild(card);
         });
+    }
+
+    watchStreamFromCard(el) {
+        const ds = el.dataset;
+        const stream = {
+            stream_key: ds.streamKey,
+            title: ds.title,
+            broadcaster: ds.broadcaster,
+            category: ds.category,
+            resolution: ds.resolution,
+            bitrate_kbps: parseInt(ds.bitrate || '2500'),
+            viewer_count: parseInt(ds.viewerCount || '0'),
+            is_live: true
+        };
+        this.watchStream(stream);
     }
 
     watchStream(stream) {
@@ -338,12 +360,16 @@ class CastrApp {
         if (this.registrationDisabled && tab === 'register') {
             tab = 'login';
         }
-        document.getElementById('auth-modal').classList.remove('hidden');
+        const modal = document.getElementById('auth-modal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
         this.switchAuthTab(tab);
     }
 
     closeAuthModal() {
-        document.getElementById('auth-modal').classList.add('hidden');
+        const modal = document.getElementById('auth-modal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
         document.getElementById('auth-error-msg').classList.add('hidden');
     }
 
@@ -422,14 +448,18 @@ class CastrApp {
     }
 
     openRtmpModal() {
-        document.getElementById('rtmp-modal').classList.remove('hidden');
+        const modal = document.getElementById('rtmp-modal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
         if (this.user) {
             document.getElementById('rtmp-key').value = `webcam_${this.user.username}`;
         }
     }
 
     closeRtmpModal() {
-        document.getElementById('rtmp-modal').classList.add('hidden');
+        const modal = document.getElementById('rtmp-modal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
     }
 
     copyText(elementId) {
