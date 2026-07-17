@@ -22,25 +22,50 @@ struct Cli {
     record: bool,
 
     /// Maximum size of a recorded file before splitting or deleting (e.g. 100MB, 1GB, or bytes)
-    #[arg(short = 'm', long = "record-max-size", alias = "max-record-size", default_value = "100MB")]
+    #[arg(
+        short = 'm',
+        long = "record-max-size",
+        alias = "max-record-size",
+        default_value = "100MB"
+    )]
     record_max_size: String,
 
     /// Action when recording reaches max size: 'archive' or 'delete'
-    #[arg(short = 'o', long = "record-action", alias = "overflow-action", default_value = "archive")]
+    #[arg(
+        short = 'o',
+        long = "record-action",
+        alias = "overflow-action",
+        default_value = "archive"
+    )]
     record_action: String,
 
     /// Maximum number of archived recordings kept per stream (0 = unlimited)
-    #[arg(short = 'a', long = "max-archived", alias = "record-max-archives", alias = "max-archives", default_value_t = 0)]
+    #[arg(
+        short = 'a',
+        long = "max-archived",
+        alias = "record-max-archives",
+        alias = "max-archives",
+        default_value_t = 0
+    )]
     max_archived: usize,
 }
 
 fn parse_size_bytes(s: &str) -> u64 {
     let s_trimmed = s.trim().to_uppercase();
-    if let Some(num) = s_trimmed.strip_suffix("GB").or_else(|| s_trimmed.strip_suffix("G")) {
+    if let Some(num) = s_trimmed
+        .strip_suffix("GB")
+        .or_else(|| s_trimmed.strip_suffix("G"))
+    {
         num.parse::<u64>().unwrap_or(1) * 1024 * 1024 * 1024
-    } else if let Some(num) = s_trimmed.strip_suffix("MB").or_else(|| s_trimmed.strip_suffix("M")) {
+    } else if let Some(num) = s_trimmed
+        .strip_suffix("MB")
+        .or_else(|| s_trimmed.strip_suffix("M"))
+    {
         num.parse::<u64>().unwrap_or(100) * 1024 * 1024
-    } else if let Some(num) = s_trimmed.strip_suffix("KB").or_else(|| s_trimmed.strip_suffix("K")) {
+    } else if let Some(num) = s_trimmed
+        .strip_suffix("KB")
+        .or_else(|| s_trimmed.strip_suffix("K"))
+    {
         num.parse::<u64>().unwrap_or(100000) * 1024
     } else if let Some(num) = s_trimmed.strip_suffix("B") {
         num.parse::<u64>().unwrap_or(104_857_600)
@@ -104,12 +129,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .allow_headers(Any);
 
     // Build Axum router serving API endpoints and embedded Static Web UI / Templates
-    let app = api::create_router(Arc::clone(&state))
-        .layer(cors);
+    let app = api::create_router(Arc::clone(&state)).layer(cors);
 
     let http_port = 3000;
     let addr = SocketAddr::from(([0, 0, 0, 0], http_port));
-    info!("🌟 Castr Web Studio & API Server listening on http://{}", addr);
+    info!(
+        "🌟 Castr Web Studio & API Server listening on http://{}",
+        addr
+    );
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;

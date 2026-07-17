@@ -57,30 +57,43 @@ async fn register_handler(
     if state.disable_registration {
         return (
             StatusCode::FORBIDDEN,
-            Json(serde_json::to_value(ErrorResponse {
-                error: "New user registration has been disabled by the server administrator.".into(),
-            }).unwrap()),
-        ).into_response();
+            Json(
+                serde_json::to_value(ErrorResponse {
+                    error: "New user registration has been disabled by the server administrator."
+                        .into(),
+                })
+                .unwrap(),
+            ),
+        )
+            .into_response();
     }
 
     let username = payload.username.trim().to_string();
     if username.is_empty() || payload.password.len() < 3 {
         return (
             StatusCode::BAD_REQUEST,
-            Json(serde_json::to_value(ErrorResponse {
-                error: "Username required and password must be at least 3 characters".into(),
-            }).unwrap()),
-        ).into_response();
+            Json(
+                serde_json::to_value(ErrorResponse {
+                    error: "Username required and password must be at least 3 characters".into(),
+                })
+                .unwrap(),
+            ),
+        )
+            .into_response();
     }
 
     let mut users = state.users.write().await;
     if users.contains_key(&username) {
         return (
             StatusCode::CONFLICT,
-            Json(serde_json::to_value(ErrorResponse {
-                error: "Username is already registered. Please log in.".into(),
-            }).unwrap()),
-        ).into_response();
+            Json(
+                serde_json::to_value(ErrorResponse {
+                    error: "Username is already registered. Please log in.".into(),
+                })
+                .unwrap(),
+            ),
+        )
+            .into_response();
     }
 
     let token = Uuid::new_v4().to_string();
@@ -101,12 +114,16 @@ async fn register_handler(
 
     (
         StatusCode::CREATED,
-        Json(serde_json::to_value(AuthResponse {
-            token,
-            username,
-            message: "Successfully registered and logged in!".into(),
-        }).unwrap()),
-    ).into_response()
+        Json(
+            serde_json::to_value(AuthResponse {
+                token,
+                username,
+                message: "Successfully registered and logged in!".into(),
+            })
+            .unwrap(),
+        ),
+    )
+        .into_response()
 }
 
 async fn login_handler(
@@ -134,21 +151,29 @@ async fn login_handler(
 
             return (
                 StatusCode::OK,
-                Json(serde_json::to_value(AuthResponse {
-                    token: new_token,
-                    username,
-                    message: "Login successful".into(),
-                }).unwrap()),
-            ).into_response();
+                Json(
+                    serde_json::to_value(AuthResponse {
+                        token: new_token,
+                        username,
+                        message: "Login successful".into(),
+                    })
+                    .unwrap(),
+                ),
+            )
+                .into_response();
         }
     }
 
     (
         StatusCode::UNAUTHORIZED,
-        Json(serde_json::to_value(ErrorResponse {
-            error: "Invalid username or password".into(),
-        }).unwrap()),
-    ).into_response()
+        Json(
+            serde_json::to_value(ErrorResponse {
+                error: "Invalid username or password".into(),
+            })
+            .unwrap(),
+        ),
+    )
+        .into_response()
 }
 
 async fn me_handler(
@@ -169,11 +194,13 @@ async fn me_handler(
                 "username": user.username,
                 "created_at": user.created_at,
             })),
-        ).into_response()
+        )
+            .into_response()
     } else {
         (
             StatusCode::UNAUTHORIZED,
             Json(serde_json::json!({ "error": "Unauthorized" })),
-        ).into_response()
+        )
+            .into_response()
     }
 }

@@ -43,10 +43,15 @@ pub static TEMPLATES: Lazy<Tera> = Lazy::new(|| {
             tracing::error!("Embedded template not found: {}", path);
         }
     }
-    if let Err(e) = tera.add_raw_templates(raw_templates.iter().map(|(n, c)| (n.as_str(), c.as_str()))) {
+    if let Err(e) =
+        tera.add_raw_templates(raw_templates.iter().map(|(n, c)| (n.as_str(), c.as_str())))
+    {
         tracing::error!("Tera template parsing error from embedded assets: {}", e);
     } else {
-        tracing::info!("🎨 Successfully loaded {} embedded Tera templates", raw_templates.len());
+        tracing::info!(
+            "🎨 Successfully loaded {} embedded Tera templates",
+            raw_templates.len()
+        );
     }
     tera
 });
@@ -55,10 +60,7 @@ pub static TEMPLATES: Lazy<Tera> = Lazy::new(|| {
 #[folder = "static/"]
 struct StaticAssets;
 
-pub async fn static_handler(
-    uri: axum::http::Uri,
-    headers: axum::http::HeaderMap,
-) -> Response {
+pub async fn static_handler(uri: axum::http::Uri, headers: axum::http::HeaderMap) -> Response {
     let mut path = uri.path().trim_start_matches('/');
     if path.is_empty() {
         path = "index.html";
@@ -119,7 +121,9 @@ pub async fn static_handler(
 
     builder
         .body(axum::body::Body::from(data))
-        .unwrap_or_else(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Error building response").into_response())
+        .unwrap_or_else(|_| {
+            (StatusCode::INTERNAL_SERVER_ERROR, "Error building response").into_response()
+        })
 }
 
 #[derive(Debug, Deserialize)]

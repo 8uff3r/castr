@@ -49,15 +49,9 @@ pub enum MediaPacket {
         is_keyframe: bool,
     },
     /// Audio tag payload (codec, timestamp_ms, raw bytes)
-    Audio {
-        data: Bytes,
-        timestamp_ms: u32,
-    },
+    Audio { data: Bytes, timestamp_ms: u32 },
     /// Raw chunk (FLV tag or WebM chunk)
-    RawChunk {
-        data: Bytes,
-        content_type: String,
-    },
+    RawChunk { data: Bytes, content_type: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,8 +104,8 @@ struct AuthDump {
 
 pub struct AppState {
     pub streams: RwLock<HashMap<String, LiveStream>>,
-    pub users: RwLock<HashMap<String, User>>,       // username -> User
-    pub tokens: RwLock<HashMap<String, String>>,    // token -> username
+    pub users: RwLock<HashMap<String, User>>, // username -> User
+    pub tokens: RwLock<HashMap<String, String>>, // token -> username
     pub disable_registration: bool,
     pub record_config: RecordConfig,
 }
@@ -125,7 +119,11 @@ impl AppState {
             if let Ok(dump) = serde_json::from_str::<AuthDump>(&data) {
                 users = dump.users;
                 tokens = dump.tokens;
-                tracing::info!("Loaded {} users and {} tokens from users.json", users.len(), tokens.len());
+                tracing::info!(
+                    "Loaded {} users and {} tokens from users.json",
+                    users.len(),
+                    tokens.len()
+                );
             }
         }
 
@@ -208,7 +206,10 @@ impl AppState {
         }
     }
 
-    pub async fn subscribe_media(&self, stream_key: &str) -> Option<(broadcast::Receiver<MediaPacket>, Vec<Bytes>)> {
+    pub async fn subscribe_media(
+        &self,
+        stream_key: &str,
+    ) -> Option<(broadcast::Receiver<MediaPacket>, Vec<Bytes>)> {
         let streams = self.streams.read().await;
         if let Some(stream) = streams.get(stream_key) {
             let mut init_tags = Vec::new();
@@ -277,7 +278,10 @@ impl AppState {
         }
     }
 
-    pub async fn subscribe_chat(&self, stream_key: &str) -> Option<(broadcast::Receiver<ChatMessage>, Vec<ChatMessage>)> {
+    pub async fn subscribe_chat(
+        &self,
+        stream_key: &str,
+    ) -> Option<(broadcast::Receiver<ChatMessage>, Vec<ChatMessage>)> {
         let mut streams = self.streams.write().await;
         if let Some(stream) = streams.get_mut(stream_key) {
             stream.meta.viewer_count += 1;
@@ -375,7 +379,9 @@ impl AppState {
                             }
                             b
                         }
-                        MediaPacket::Video { data, .. } | MediaPacket::RawChunk { data, .. } => data,
+                        MediaPacket::Video { data, .. } | MediaPacket::RawChunk { data, .. } => {
+                            data
+                        }
                         MediaPacket::Audio { data, .. } => data,
                     };
 
@@ -413,13 +419,18 @@ impl AppState {
                             }
                             RecordOverflowAction::Archive => {
                                 if self.record_config.max_archived_files > 0 {
-                                    if let Ok(mut entries) = tokio::fs::read_dir("recordings").await {
+                                    if let Ok(mut entries) = tokio::fs::read_dir("recordings").await
+                                    {
                                         let mut archived_files = Vec::new();
                                         let prefix = format!("{}_", stream_key);
                                         while let Ok(Some(entry)) = entries.next_entry().await {
                                             let path = entry.path();
-                                            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                                                if name.starts_with(&prefix) && name.ends_with(".flv") {
+                                            if let Some(name) =
+                                                path.file_name().and_then(|n| n.to_str())
+                                            {
+                                                if name.starts_with(&prefix)
+                                                    && name.ends_with(".flv")
+                                                {
                                                     if let Ok(meta) = entry.metadata().await {
                                                         if let Ok(modified) = meta.modified() {
                                                             archived_files.push((modified, path));
@@ -428,10 +439,16 @@ impl AppState {
                                                 }
                                             }
                                         }
-                                        if archived_files.len() >= self.record_config.max_archived_files {
+                                        if archived_files.len()
+                                            >= self.record_config.max_archived_files
+                                        {
                                             archived_files.sort_by_key(|(m, _)| *m);
-                                            let num_to_remove = archived_files.len() - self.record_config.max_archived_files + 1;
-                                            for (_, old_path) in archived_files.into_iter().take(num_to_remove) {
+                                            let num_to_remove = archived_files.len()
+                                                - self.record_config.max_archived_files
+                                                + 1;
+                                            for (_, old_path) in
+                                                archived_files.into_iter().take(num_to_remove)
+                                            {
                                                 tracing::info!(
                                                     "🗑️ Pruning oldest archive file {} (max_archived limit: {})",
                                                     old_path.display(),
@@ -479,7 +496,11 @@ impl AppState {
                     current_size += bytes.len() as u64;
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    tracing::warn!("Recorder lagged by {} frames on {}, continuing...", n, stream_key);
+                    tracing::warn!(
+                        "Recorder lagged by {} frames on {}, continuing...",
+                        n,
+                        stream_key
+                    );
                     continue;
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
