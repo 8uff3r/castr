@@ -8,7 +8,6 @@ use state::AppState;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
-use tower_http::services::ServeDir;
 use tracing::info;
 
 #[derive(Parser, Debug)]
@@ -104,10 +103,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    // Build Axum router serving API endpoints and Static Web UI
+    // Build Axum router serving API endpoints and embedded Static Web UI / Templates
     let app = api::create_router(Arc::clone(&state))
-        .layer(cors)
-        .fallback_service(ServeDir::new("static").append_index_html_on_directories(true));
+        .layer(cors);
 
     let http_port = 3000;
     let addr = SocketAddr::from(([0, 0, 0, 0], http_port));

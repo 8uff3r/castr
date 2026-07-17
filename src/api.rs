@@ -18,18 +18,109 @@ use tera::{Context, Tera};
 use tracing::{info, warn};
 use uuid::Uuid;
 
+use rust_embed_for_web::{EmbedableFile, RustEmbed};
+
+#[derive(RustEmbed)]
+#[folder = "templates/"]
+struct TemplateAssets;
+
 pub static TEMPLATES: Lazy<Tera> = Lazy::new(|| {
-    match Tera::new("templates/**/*") {
-        Ok(t) => {
-            tracing::info!("🎨 Successfully loaded {} Tera templates", t.get_template_names().count());
-            t
-        }
-        Err(e) => {
-            tracing::error!("Tera template parsing error: {}", e);
-            Tera::default()
+    let mut tera = Tera::default();
+    let template_paths = [
+        "base.html",
+        "index.html",
+        "partials/stream_cards.html",
+        "partials/stats_cards.html",
+    ];
+    let mut raw_templates = Vec::new();
+    for path in template_paths {
+        if let Some(file) = TemplateAssets::get(path) {
+            let data = file.data();
+            if let Ok(content) = std::str::from_utf8(data.as_ref()) {
+                raw_templates.push((path.to_string(), content.to_string()));
+            }
+        } else {
+            tracing::error!("Embedded template not found: {}", path);
         }
     }
+    if let Err(e) = tera.add_raw_templates(raw_templates.iter().map(|(n, c)| (n.as_str(), c.as_str()))) {
+        tracing::error!("Tera template parsing error from embedded assets: {}", e);
+    } else {
+        tracing::info!("🎨 Successfully loaded {} embedded Tera templates", raw_templates.len());
+    }
+    tera
 });
+
+#[derive(RustEmbed)]
+#[folder = "static/"]
+struct StaticAssets;
+
+pub async fn static_handler(
+    uri: axum::http::Uri,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    let mut path = uri.path().trim_start_matches('/');
+    if path.is_empty() {
+        path = "index.html";
+    }
+
+    let Some(file) = StaticAssets::get(path) else {
+        return (StatusCode::NOT_FOUND, "404 Not Found").into_response();
+    };
+
+    let etag = file.etag();
+    let etag_str: &str = etag.as_ref();
+    if let Some(if_none_match) = headers.get(header::IF_NONE_MATCH) {
+        if let Ok(req_etag) = if_none_match.to_str() {
+            if req_etag == etag_str {
+                return StatusCode::NOT_MODIFIED.into_response();
+            }
+        }
+    }
+
+    let accept_encoding = headers
+        .get(header::ACCEPT_ENCODING)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    let (data, encoding) = if accept_encoding.contains("br") && file.data_br().is_some() {
+        let br_data = file.data_br().unwrap();
+        let slice: &[u8] = br_data.as_ref();
+        (slice.to_vec(), Some("br"))
+    } else if accept_encoding.contains("gzip") && file.data_gzip().is_some() {
+        let gz_data = file.data_gzip().unwrap();
+        let slice: &[u8] = gz_data.as_ref();
+        (slice.to_vec(), Some("gzip"))
+    } else {
+        let raw_data = file.data();
+        let slice: &[u8] = raw_data.as_ref();
+        (slice.to_vec(), None)
+    };
+
+    let mut builder = axum::http::Response::builder()
+        .status(StatusCode::OK)
+        .header(header::ETAG, etag_str);
+
+    if let Some(last_mod) = file.last_modified() {
+        let last_mod_str: &str = last_mod.as_ref();
+        builder = builder.header(header::LAST_MODIFIED, last_mod_str);
+    }
+
+    if let Some(mime) = file.mime_type() {
+        let mime_str: &str = mime.as_ref();
+        builder = builder.header(header::CONTENT_TYPE, mime_str);
+    } else {
+        builder = builder.header(header::CONTENT_TYPE, "application/octet-stream");
+    }
+
+    if let Some(enc) = encoding {
+        builder = builder.header(header::CONTENT_ENCODING, enc);
+    }
+
+    builder
+        .body(axum::body::Body::from(data))
+        .unwrap_or_else(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Error building response").into_response())
+}
 
 #[derive(Debug, Deserialize)]
 pub struct WatchQuery {
@@ -54,6 +145,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/ws/watch/:key", get(ws_watch_handler))
         .route("/api/ws/chat/:key", get(ws_chat_handler))
         .merge(auth_router)
+        .fallback(static_handler)
         .with_state(state)
 }
 
